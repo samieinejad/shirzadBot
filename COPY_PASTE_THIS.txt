@@ -1,0 +1,67 @@
+=================================================================
+COPY & PASTE THESE COMMANDS ON YOUR UBUNTU SERVER
+=================================================================
+
+# Step 1: Navigate to project
+cd /var/www/shirzadBot
+
+# Step 2: See what Nginx sites are enabled
+ls /etc/nginx/sites-enabled/
+
+# Step 3: Remove default/catch-all that's showing Laravel
+sudo rm /etc/nginx/sites-enabled/default
+
+# Step 4: Create proper Nginx config for your bot
+sudo tee /etc/nginx/sites-available/shirzadbot > /dev/null <<'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name social.msn1.ir www.social.msn1.ir;
+
+    client_max_body_size 50M;
+    proxy_read_timeout 300s;
+
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+
+# Step 5: Enable your bot site
+sudo ln -sf /etc/nginx/sites-available/shirzadbot /etc/nginx/sites-enabled/
+
+# Step 6: Test Nginx
+sudo nginx -t
+
+# Step 7: Reload Nginx
+sudo systemctl reload nginx
+
+# Step 8: Start your bot service
+sudo systemctl start shirzadbot
+sudo systemctl enable shirzadbot
+
+# Step 9: Check status
+sudo systemctl status shirzadbot
+
+# Step 10: Test it works
+curl http://localhost:5000
+echo ""
+echo "If you see HTML above, it works!"
+echo ""
+echo "Now test your domain:"
+echo "Open: https://social.msn1.ir"
+
+# If you want SSL:
+sudo certbot --nginx -d social.msn1.ir
+
+=================================================================
+DONE! Your bot should now work at social.msn1.ir
+=================================================================
+
