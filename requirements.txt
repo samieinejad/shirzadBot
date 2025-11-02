@@ -1,0 +1,10 @@
+Flask
+python-telegram-bot
+pandas
+openpyxl
+requests
+APScheduler
+Pillow
+jdatetime
+pytz
+
