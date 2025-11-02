@@ -1,0 +1,17 @@
+Run these commands on your Ubuntu server:
+
+# Option 1: Stash changes, pull, then reapply
+git stash
+git pull
+git stash pop
+
+# Option 2: Discard local changes and use remote version
+git checkout -- RUN_ME_FIRST.sh
+git pull
+
+# Option 3: Just overwrite everything
+git reset --hard HEAD
+git pull
+
+I recommend Option 1 (stash) to keep your port 5010 changes.
+

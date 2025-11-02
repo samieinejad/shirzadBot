@@ -1,0 +1,21 @@
+Run these commands on your Ubuntu server RIGHT NOW:
+
+# STOP the service first
+sudo systemctl stop shirzadbot
+
+# Fix port in app.py
+sed -i 's/port=5000/port=5010/g' app.py
+
+# Verify it worked
+grep "port=" app.py | grep 5010
+
+# Check logs to see what error is happening
+tail -100 logs/error.log
+
+# Then start service
+sudo systemctl start shirzadbot
+
+# Check if it's working now
+sleep 3
+curl http://localhost:5010
+
