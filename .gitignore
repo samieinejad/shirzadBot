@@ -54,6 +54,8 @@ app.log
 uploads/
 temp/
 *.tmp
+logs/
+*.log
 
 # Environment variables
 .env
