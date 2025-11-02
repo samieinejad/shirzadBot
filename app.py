@@ -12514,8 +12514,8 @@ def api_clear_cache():
 
 
 def run_flask():
-    logger.info("Starting Flask on http://0.0.0.0:5000")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    logger.info("Starting Flask on http://0.0.0.0:5010")
+    app.run(host='0.0.0.0', port=5010, debug=False)
 
 # =================================================================
 # --- Shared Handlers ---
@@ -16141,7 +16141,7 @@ def run_flask():
     """Run the Flask web server"""
     try:
         logger.info("Starting Flask server...")
-        app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+        app.run(host='0.0.0.0', port=5010, debug=False, use_reloader=False)
     except Exception as e:
         logger.error(f"Flask server error: {e}")
 

@@ -1,17 +1,15 @@
 =================================================================
-COPY & PASTE THESE COMMANDS ON YOUR UBUNTU SERVER
+USE THESE COMMANDS - PORT 5010
 =================================================================
 
-# Step 1: Navigate to project
+Copy and paste these commands on your Ubuntu server:
+
 cd /var/www/shirzadBot
 
-# Step 2: See what Nginx sites are enabled
-ls /etc/nginx/sites-enabled/
+# Stop bot
+sudo systemctl stop shirzadbot
 
-# Step 3: Remove default/catch-all that's showing Laravel
-sudo rm /etc/nginx/sites-enabled/default
-
-# Step 4: Create proper Nginx config for your bot
+# Create Nginx config with PORT 5010
 sudo tee /etc/nginx/sites-available/shirzadbot > /dev/null <<'EOF'
 server {
     listen 80;
@@ -34,34 +32,34 @@ server {
 }
 EOF
 
-# Step 5: Enable your bot site
+# Enable site
 sudo ln -sf /etc/nginx/sites-available/shirzadbot /etc/nginx/sites-enabled/
 
-# Step 6: Test Nginx
+# Remove default
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test Nginx
 sudo nginx -t
 
-# Step 7: Reload Nginx
+# Reload Nginx
 sudo systemctl reload nginx
 
-# Step 8: Start your bot service
+# Start bot
 sudo systemctl start shirzadbot
 sudo systemctl enable shirzadbot
 
-# Step 9: Check status
+# Check status
 sudo systemctl status shirzadbot
 
-# Step 10: Test it works
+# Test
 curl http://localhost:5010
+
 echo ""
 echo "If you see HTML above, it works!"
 echo ""
-echo "Now test your domain:"
-echo "Open: https://social.msn1.ir"
-
-# If you want SSL:
-sudo certbot --nginx -d social.msn1.ir
+echo "Now open: https://social.msn1.ir"
 
 =================================================================
-DONE! Your bot should now work at social.msn1.ir
+PORT CHANGED FROM 5000 TO 5010 - NO MORE CONFLICTS!
 =================================================================
 

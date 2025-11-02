@@ -1,21 +1,20 @@
 #!/bin/bash
-# Fix Nginx configuration for social.msn1.ir
+# Final fix with port 5010
 
-set -e
-
-echo "🔧 Fixing Nginx Configuration..."
+echo "🔧 Fixing Nginx with port 5010..."
 echo ""
 
-# Check current enabled sites
-echo "Current enabled sites:"
-ls -la /etc/nginx/sites-enabled/
-echo ""
+cd /var/www/shirzadBot || exit 1
 
-# Create proper configuration
+# Stop bot service
+sudo systemctl stop shirzadbot 2>/dev/null
+
+# Create proper Nginx config
 echo "Creating Nginx configuration..."
 sudo tee /etc/nginx/sites-available/shirzadbot > /dev/null <<'EOF'
 server {
     listen 80;
+    listen [::]:80;
     server_name social.msn1.ir www.social.msn1.ir;
 
     client_max_body_size 50M;
@@ -37,27 +36,38 @@ server {
 }
 EOF
 
-# Enable bot site
+# Enable site
 sudo ln -sf /etc/nginx/sites-available/shirzadbot /etc/nginx/sites-enabled/
 
 # Remove default
 sudo rm -f /etc/nginx/sites-enabled/default
 
-# Test
+# Test Nginx
 echo "Testing Nginx configuration..."
 sudo nginx -t
 
 echo "Reloading Nginx..."
 sudo systemctl reload nginx
 
+# Start bot
+echo "Starting bot service..."
+sudo systemctl start shirzadbot
+sudo systemctl enable shirzadbot
+
+sleep 3
+
 echo ""
-echo "✅ Nginx fixed!"
+echo "✅ Fix complete!"
 echo ""
-echo "Check service:"
-sudo systemctl status shirzadbot --no-pager | head -5
+echo "Checking status:"
+sudo systemctl status shirzadbot --no-pager | head -8
 echo ""
 
-echo "Test locally:"
-curl -s http://localhost:5010 | head -5
+echo "Testing port 5010:"
+curl -s http://localhost:5010 | head -10
+echo ""
+
+echo "🌐 Your bot should now work at:"
+echo "   https://social.msn1.ir"
 echo ""
 
