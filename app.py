@@ -16141,7 +16141,7 @@ def run_flask():
     """Run the Flask web server"""
     try:
         logger.info("Starting Flask server...")
-        app.run(host='0.0.0.0', port=5010, debug=False, use_reloader=False)
+        app.run(host='0.0.0.0', port=5010, debug=True, use_reloader=False)
     except Exception as e:
         logger.error(f"Flask server error: {e}")
 
