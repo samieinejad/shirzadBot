@@ -1,0 +1,24 @@
+Run these commands on the server to debug the 502:
+
+# 1. Check if anything is listening on port 5010
+sudo netstat -tlnp | grep 5010
+
+# 2. Check if the service is actually running
+sudo systemctl status shirzadbot --no-pager
+
+# 3. See the latest logs
+tail -50 /var/www/shirzadBot/logs/app.log
+
+# 4. See errors
+tail -50 /var/www/shirzadBot/logs/error.log
+
+# 5. Check Nginx error log
+sudo tail -20 /var/log/nginx/error.log
+
+# 6. Try to connect manually
+curl -v http://localhost:5010
+
+# 7. Verify code was updated
+cd /var/www/shirzadBot
+git log --oneline -3
+

@@ -1,0 +1,21 @@
+Run these commands on your server:
+
+cd /var/www/shirzadBot
+
+# Pull the latest with debug enabled
+git pull
+
+# Restart service
+sudo systemctl restart shirzadbot
+
+# Check status
+sudo systemctl status shirzadbot
+
+# Wait a few seconds
+sleep 5
+
+# Now try to access in browser or curl
+curl http://localhost:5010
+
+Now open https://social.msn1.ir in your browser and you'll see any errors!
+

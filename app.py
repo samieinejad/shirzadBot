@@ -18,7 +18,7 @@ except ImportError:
     print("⚠️  فایل compatibility_fix.py یافت نشد - ادامه بدون حل مشکلات سازگاری")
 
 # --- Flask App Initialization ---
-from flask import Flask, jsonify, request, render_template, send_from_directory
+from flask import Flask, jsonify, request, render_template, send_from_directory, redirect
 import os
 
 # Fix for Python 3.13+ compatibility - imghdr module was removed
@@ -3195,6 +3195,95 @@ def init_db():
         except Exception as e:
             logger.warning(f"Migration error for broadcast_batches table: {e}")
             
+        # =================================================================
+        # User Authentication Tables
+        # =================================================================
+        conn.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mobile TEXT UNIQUE NOT NULL,
+            full_name TEXT,
+            is_verified INTEGER DEFAULT 0,
+            balance INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP,
+            is_active INTEGER DEFAULT 1
+        )''')
+        
+        conn.execute('''CREATE TABLE IF NOT EXISTS user_otp_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mobile TEXT NOT NULL,
+            code TEXT NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            is_used INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            attempts INTEGER DEFAULT 0
+        )''')
+        
+        conn.execute('''CREATE TABLE IF NOT EXISTS user_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            session_token TEXT UNIQUE NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        
+        conn.execute('''CREATE TABLE IF NOT EXISTS user_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            telegram_token TEXT,
+            bale_token TEXT,
+            ita_token TEXT,
+            telegram_owner_id TEXT,
+            bale_owner_id TEXT,
+            ita_owner_id TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        
+        conn.execute('''CREATE TABLE IF NOT EXISTS user_billing (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            transaction_id TEXT UNIQUE,
+            payping_ref_id TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            verified_at TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        
+        conn.execute('''CREATE TABLE IF NOT EXISTS user_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            description TEXT,
+            balance_before INTEGER,
+            balance_after INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        
+        # Add admin column to users table
+        try:
+            user_cols = [r[1] for r in conn.execute("PRAGMA table_info('users')").fetchall()]
+            if 'is_admin' not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+                logger.info("Added is_admin column to users table")
+        except sqlite3.Error as e:
+            logger.warning(f"Migration warning (is_admin column): {e}")
+        
+        # Indexes for user tables
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_mobile ON users(mobile)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_otp_mobile ON user_otp_codes(mobile)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_billing_user ON user_billing(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_billing_ref ON user_billing(payping_ref_id)")
+        
         conn.commit()
         
         # انتقال داده‌های تگ‌گذاری کاربران از user_tag_status به chats
@@ -5989,8 +6078,927 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# =================================================================
+# User Authentication System
+# =================================================================
+
+import secrets
+import re
+
+# Kavenegar API configuration (add to config.py)
+try:
+    import config
+    KAVENEGAR_API_KEY = getattr(config, 'KAVENEGAR_API_KEY', '')
+    PAYPING_TOKEN = getattr(config, 'PAYPING_TOKEN', '')
+except:
+    KAVENEGAR_API_KEY = os.environ.get('KAVENEGAR_API_KEY', '')
+    PAYPING_TOKEN = os.environ.get('PAYPING_TOKEN', '')
+
+def normalize_mobile(mobile):
+    """Normalize Iranian mobile number"""
+    mobile = re.sub(r'[^\d]', '', mobile)
+    if mobile.startswith('0'):
+        mobile = '98' + mobile[1:]
+    elif not mobile.startswith('98'):
+        mobile = '98' + mobile
+    return mobile
+
+def send_otp_via_kavenegar(mobile, code):
+    """Send OTP code via Kavenegar SMS"""
+    try:
+        import requests
+        normalized = normalize_mobile(mobile)
+        
+        if not KAVENEGAR_API_KEY:
+            logger.warning("KAVENEGAR_API_KEY not configured, using mock mode")
+            logger.info(f"[MOCK] OTP code for {mobile}: {code}")
+            return True
+        
+        url = "https://api.kavenegar.com/v1/{}/sms/send.json".format(KAVENEGAR_API_KEY)
+        payload = {
+            'receptor': normalized,
+            'message': f'کد تایید شما: {code}\nاین کد 5 دقیقه معتبر است.',
+            'sender': '1000596446'  # Change to your Kavenegar sender number
+        }
+        
+        response = requests.post(url, data=payload, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('return', {}).get('status') == 200:
+                logger.info(f"[Kavenegar] OTP sent to {mobile}")
+                return True
+            else:
+                logger.error(f"[Kavenegar] Failed: {result}")
+                return False
+        else:
+            logger.error(f"[Kavenegar] HTTP {response.status_code}")
+            return False
+    except Exception as e:
+        logger.error(f"[Kavenegar] Error sending OTP: {e}")
+        return False
+
+def generate_otp():
+    """Generate 6-digit OTP code"""
+    return ''.join([str(random.randint(0, 9)) for _ in range(6)])
+
+def create_session(user_id):
+    """Create user session"""
+    session_token = secrets.token_urlsafe(32)
+    expires_at = datetime.now() + timedelta(days=30)
+    
+    with get_db_connection() as conn:
+        conn.execute('''
+            INSERT INTO user_sessions (user_id, session_token, expires_at)
+            VALUES (?, ?, ?)
+        ''', (user_id, session_token, expires_at))
+        conn.commit()
+    
+    return session_token
+
+def get_user_from_session(session_token):
+    """Get user from session token"""
+    if not session_token:
+        return None
+    
+    with get_db_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT u.*, ut.telegram_token, ut.bale_token, ut.ita_token,
+                   ut.telegram_owner_id, ut.bale_owner_id, ut.ita_owner_id
+            FROM user_sessions s
+            JOIN users u ON s.user_id = u.id
+            LEFT JOIN user_tokens ut ON u.id = ut.user_id
+            WHERE s.session_token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+        ''', (session_token,))
+        result = cursor.fetchone()
+        return dict(result) if result else None
+
+def require_auth(f):
+    """Decorator to require authentication"""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        session_token = request.cookies.get('session_token') or request.headers.get('X-Session-Token')
+        user = get_user_from_session(session_token)
+        if not user:
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Unauthorized', 'login_required': True}), 401
+            else:
+                from flask import redirect, url_for
+                return redirect('/login')
+        request.user = user
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_admin(f):
+    """Decorator to require admin access"""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        session_token = request.cookies.get('session_token') or request.headers.get('X-Session-Token')
+        user = get_user_from_session(session_token)
+        if not user:
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Unauthorized', 'login_required': True}), 401
+            else:
+                return redirect('/login')
+        if not user.get('is_admin'):
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Admin access required'}), 403
+            else:
+                return redirect('/dashboard')
+        request.user = user
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Authentication Routes
+@app.route('/login')
+@app.route('/signup')
+def auth_page():
+    """Login/Signup page"""
+    try:
+        return render_template('auth.html')
+    except:
+        return """
+        <!DOCTYPE html>
+        <html lang="fa" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>ورود / ثبت نام</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <style>
+                body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; }
+                .auth-card { background: white; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+                .form-control:focus { border-color: #667eea; box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25); }
+                .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="row justify-content-center">
+                    <div class="col-md-5">
+                        <div class="auth-card p-5">
+                            <h2 class="text-center mb-4">ورود / ثبت نام</h2>
+                            <div id="auth-form">
+                                <div class="mb-3">
+                                    <label class="form-label">شماره موبایل</label>
+                                    <input type="tel" id="mobile" class="form-control" placeholder="09123456789" maxlength="11">
+                                </div>
+                                <button onclick="sendOTP()" class="btn btn-primary w-100">ارسال کد تایید</button>
+                                <div id="otp-section" style="display:none" class="mt-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">کد تایید</label>
+                                        <input type="text" id="otp" class="form-control" placeholder="123456" maxlength="6">
+                                    </div>
+                                    <button onclick="verifyOTP()" class="btn btn-primary w-100">تایید</button>
+                                </div>
+                                <div id="message" class="mt-3"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <script>
+                function sendOTP() {
+                    const mobile = document.getElementById('mobile').value;
+                    if (!/^09\d{9}$/.test(mobile)) {
+                        showMessage('شماره موبایل معتبر وارد کنید', 'danger');
+                        return;
+                    }
+                    fetch('/api/auth/send-otp', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({mobile: mobile})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            showMessage('کد تایید ارسال شد', 'success');
+                            document.getElementById('otp-section').style.display = 'block';
+                        } else {
+                            showMessage(data.error || 'خطا در ارسال کد', 'danger');
+                        }
+                    });
+                }
+                function verifyOTP() {
+                    const mobile = document.getElementById('mobile').value;
+                    const otp = document.getElementById('otp').value;
+                    fetch('/api/auth/verify-otp', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({mobile: mobile, code: otp})
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.href = '/';
+                        } else {
+                            showMessage(data.error || 'کد نامعتبر', 'danger');
+                        }
+                    });
+                }
+                function showMessage(msg, type) {
+                    const div = document.getElementById('message');
+                    div.className = 'alert alert-' + type;
+                    div.textContent = msg;
+                }
+            </script>
+        </body>
+        </html>
+        """
+
+@app.route('/api/auth/send-otp', methods=['POST'])
+def api_send_otp():
+    """Send OTP to mobile number"""
+    try:
+        data = request.json
+        mobile = data.get('mobile', '').strip()
+        
+        if not mobile or not re.match(r'^09\d{9}$', mobile):
+            return jsonify({'success': False, 'error': 'شماره موبایل معتبر وارد کنید'}), 400
+        
+        # Generate OTP
+        code = generate_otp()
+        expires_at = datetime.now() + timedelta(minutes=5)
+        
+        # Store OTP
+        with get_db_connection() as conn:
+            conn.execute('''
+                INSERT INTO user_otp_codes (mobile, code, expires_at)
+                VALUES (?, ?, ?)
+            ''', (mobile, code, expires_at))
+            conn.commit()
+        
+        # Send via Kavenegar
+        if send_otp_via_kavenegar(mobile, code):
+            logger.info(f"[Auth] OTP sent to {mobile}")
+            return jsonify({'success': True, 'message': 'کد تایید ارسال شد'})
+        else:
+            return jsonify({'success': False, 'error': 'خطا در ارسال پیامک'}), 500
+            
+    except Exception as e:
+        logger.error(f"[Auth] Error sending OTP: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/auth/verify-otp', methods=['POST'])
+def api_verify_otp():
+    """Verify OTP and login/register user"""
+    try:
+        data = request.json
+        mobile = data.get('mobile', '').strip()
+        code = data.get('code', '').strip()
+        
+        if not mobile or not code:
+            return jsonify({'success': False, 'error': 'اطلاعات کامل وارد کنید'}), 400
+        
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # Development bypass: code 11111 works for all users
+            if code == '11111':
+                logger.info(f"[Auth] Development bypass OTP used for {mobile}")
+            else:
+                # Check OTP normally
+                cursor.execute('''
+                    SELECT * FROM user_otp_codes
+                    WHERE mobile = ? AND code = ? AND expires_at > datetime('now') AND is_used = 0
+                    ORDER BY created_at DESC LIMIT 1
+                ''', (mobile, code))
+                otp_record = cursor.fetchone()
+                
+                if not otp_record:
+                    return jsonify({'success': False, 'error': 'کد تایید نامعتبر یا منقضی شده'}), 400
+                
+                # Mark OTP as used
+                cursor.execute('UPDATE user_otp_codes SET is_used = 1 WHERE id = ?', (otp_record['id'],))
+            
+            # Check if user exists
+            cursor.execute('SELECT * FROM users WHERE mobile = ?', (mobile,))
+            user = cursor.fetchone()
+            
+            if not user:
+                # Create new user
+                cursor.execute('''
+                    INSERT INTO users (mobile, is_verified, balance)
+                    VALUES (?, 1, 0)
+                ''', (mobile,))
+                user_id = cursor.lastrowid
+                
+                # Create default token record
+                cursor.execute('''
+                    INSERT INTO user_tokens (user_id)
+                    VALUES (?)
+                ''', (user_id,))
+            else:
+                user_id = user['id']
+                # Update last login
+                cursor.execute('UPDATE users SET last_login = datetime("now"), is_verified = 1 WHERE id = ?', (user_id,))
+            
+            conn.commit()
+            
+            # Create session
+            session_token = create_session(user_id)
+            
+            response = jsonify({'success': True, 'message': 'ورود موفق'})
+            response.set_cookie('session_token', session_token, max_age=30*24*60*60, httponly=True, samesite='Lax')
+            return response
+            
+    except Exception as e:
+        logger.error(f"[Auth] Error verifying OTP: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/auth/logout', methods=['POST'])
+@require_auth
+def api_logout():
+    """Logout user"""
+    session_token = request.cookies.get('session_token')
+    if session_token:
+        with get_db_connection() as conn:
+            conn.execute('DELETE FROM user_sessions WHERE session_token = ?', (session_token,))
+            conn.commit()
+    response = jsonify({'success': True})
+    response.set_cookie('session_token', '', expires=0)
+    return response
+
+@app.route('/api/auth/me', methods=['GET'])
+@require_auth
+def api_get_user():
+    """Get current user info"""
+    user = request.user
+    return jsonify({
+        'id': user['id'],
+        'mobile': user['mobile'],
+        'full_name': user['full_name'],
+        'balance': user['balance'],
+        'has_tokens': bool(user.get('telegram_token') or user.get('bale_token') or user.get('ita_token'))
+    })
+
+@app.route('/api/auth/update-tokens', methods=['POST'])
+@require_auth
+def api_update_tokens():
+    """Update user bot tokens"""
+    try:
+        user = request.user
+        data = request.json
+        
+        telegram_token = data.get('telegram_token', '').strip()
+        bale_token = data.get('bale_token', '').strip()
+        ita_token = data.get('ita_token', '').strip()
+        telegram_owner_id = data.get('telegram_owner_id', '').strip()
+        bale_owner_id = data.get('bale_owner_id', '').strip()
+        ita_owner_id = data.get('ita_owner_id', '').strip()
+        
+        with get_db_connection() as conn:
+            # Check if token record exists
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM user_tokens WHERE user_id = ?', (user['id'],))
+            token_record = cursor.fetchone()
+            
+            if token_record:
+                # Update existing
+                cursor.execute('''
+                    UPDATE user_tokens 
+                    SET telegram_token = ?, bale_token = ?, ita_token = ?,
+                        telegram_owner_id = ?, bale_owner_id = ?, ita_owner_id = ?,
+                        updated_at = datetime('now')
+                    WHERE user_id = ?
+                ''', (telegram_token or None, bale_token or None, ita_token or None,
+                      telegram_owner_id or None, bale_owner_id or None, ita_owner_id or None,
+                      user['id']))
+            else:
+                # Create new
+                cursor.execute('''
+                    INSERT INTO user_tokens 
+                    (user_id, telegram_token, bale_token, ita_token,
+                     telegram_owner_id, bale_owner_id, ita_owner_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (user['id'], telegram_token or None, bale_token or None, ita_token or None,
+                      telegram_owner_id or None, bale_owner_id or None, ita_owner_id or None))
+            
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': 'توکن‌ها به‌روزرسانی شد'})
+        
+    except Exception as e:
+        logger.error(f"[Auth] Error updating tokens: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/auth/profile', methods=['GET'])
+@require_auth
+def profile_page():
+    """User profile page"""
+    user = request.user
+    return f"""
+    <!DOCTYPE html>
+    <html lang="fa" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>پروفایل کاربری</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body>
+        <div class="container mt-5">
+            <h2>پروفایل کاربری</h2>
+            <p>شماره موبایل: {user['mobile']}</p>
+            <p>موجودی: {user['balance']:,} تومان</p>
+            <a href="/" class="btn btn-primary">بازگشت به داشبورد</a>
+            <a href="/billing" class="btn btn-success">شارژ حساب</a>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.route('/api/payping/create-payment', methods=['POST'])
+@require_auth
+def api_create_payping_payment():
+    """Create Payping payment"""
+    try:
+        user = request.user
+        data = request.json
+        amount = int(data.get('amount', 0))
+        
+        if amount < 1000:
+            return jsonify({'success': False, 'error': 'حداقل مبلغ ۱۰۰۰ تومان'}), 400
+        
+        if not PAYPING_TOKEN:
+            return jsonify({'success': False, 'error': 'Payping تنظیم نشده'}), 500
+        
+        import requests
+        import uuid
+        
+        # Create transaction record
+        transaction_id = str(uuid.uuid4())
+        with get_db_connection() as conn:
+            conn.execute('''
+                INSERT INTO user_billing (user_id, amount, transaction_id, status)
+                VALUES (?, ?, ?, 'pending')
+            ''', (user['id'], amount, transaction_id))
+            conn.commit()
+        
+        # Call Payping API
+        payping_url = "https://api.payping.io/v2/pay"
+        callback_url = request.host_url.rstrip('/') + '/api/payping/callback'
+        
+        payload = {
+            'amount': amount,
+            'payerIdentity': user['mobile'],
+            'payerName': user.get('full_name', user['mobile']),
+            'returnUrl': callback_url,
+            'clientRefId': transaction_id,
+            'description': f'شارژ حساب - {amount:,} تومان'
+        }
+        
+        headers = {
+            'Authorization': f'Bearer {PAYPING_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(payping_url, json=payload, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            code = result.get('code')
+            payping_ref_id = result.get('refId')
+            
+            # Update transaction with Payping ref ID
+            with get_db_connection() as conn:
+                conn.execute('''
+                    UPDATE user_billing SET payping_ref_id = ? WHERE transaction_id = ?
+                ''', (payping_ref_id, transaction_id))
+                conn.commit()
+            
+            payment_url = f"https://api.payping.io/v2/pay/gotoipg/{code}"
+            return jsonify({
+                'success': True,
+                'payment_url': payment_url,
+                'code': code
+            })
+        else:
+            logger.error(f"[Payping] Error: {response.text}")
+            return jsonify({'success': False, 'error': 'خطا در ایجاد تراکنش'}), 500
+            
+    except Exception as e:
+        logger.error(f"[Payping] Error creating payment: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/payping/callback', methods=['GET'])
+def api_payping_callback():
+    """Payping payment callback"""
+    try:
+        refid = request.args.get('refid')
+        clientrefid = request.args.get('clientrefid')
+        
+        if not refid or not clientrefid:
+            return redirect('/billing?error=invalid_callback')
+        
+        # Verify payment with Payping
+        if not PAYPING_TOKEN:
+            return redirect('/billing?error=config_error')
+        
+        import requests
+        
+        verify_url = f"https://api.payping.io/v2/pay/verify/{refid}"
+        headers = {
+            'Authorization': f'Bearer {PAYPING_TOKEN}'
+        }
+        
+        response = requests.post(verify_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            amount = result.get('amount', 0)
+            
+            # Update transaction
+            with get_db_connection() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT * FROM user_billing WHERE transaction_id = ? AND status = 'pending'
+                ''', (clientrefid,))
+                transaction = cursor.fetchone()
+                
+                if transaction:
+                    user_id = transaction['user_id']
+                    
+                    # Get current balance
+                    cursor.execute('SELECT balance FROM users WHERE id = ?', (user_id,))
+                    user = cursor.fetchone()
+                    balance_before = user['balance'] if user else 0
+                    balance_after = balance_before + amount
+                    
+                    # Update balance
+                    cursor.execute('''
+                        UPDATE users SET balance = ? WHERE id = ?
+                    ''', (balance_after, user_id))
+                    
+                    # Update transaction
+                    cursor.execute('''
+                        UPDATE user_billing 
+                        SET status = 'completed', verified_at = datetime('now')
+                        WHERE transaction_id = ?
+                    ''', (clientrefid,))
+                    
+                    # Record transaction
+                    cursor.execute('''
+                        INSERT INTO user_transactions 
+                        (user_id, type, amount, description, balance_before, balance_after)
+                        VALUES (?, 'charge', ?, ?, ?, ?)
+                    ''', (user_id, amount, f'شارژ از Payping', balance_before, balance_after))
+                    
+                    conn.commit()
+                    return redirect('/billing?success=1')
+        
+        return redirect('/billing?error=verification_failed')
+        
+    except Exception as e:
+        logger.error(f"[Payping] Callback error: {e}")
+        return redirect('/billing?error=server_error')
+
+@app.route('/api/admin/users', methods=['GET'])
+@require_admin
+def api_get_all_users():
+    """Get all users (API)"""
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT u.*, 
+                       COALESCE(SUM(CASE WHEN ub.status = 'completed' THEN ub.amount ELSE 0 END), 0) as total_charge,
+                       COUNT(CASE WHEN ub.status = 'completed' THEN 1 END) as transaction_count
+                FROM users u
+                LEFT JOIN user_billing ub ON u.id = ub.user_id
+                GROUP BY u.id
+                ORDER BY u.created_at DESC
+            ''')
+            users = cursor.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'users': [dict(user) for user in users]
+        })
+    except Exception as e:
+        logger.error(f"[Admin] Error getting users: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/admin/make-admin', methods=['POST'])
+@require_admin
+def api_make_admin():
+    """Make a user admin"""
+    try:
+        data = request.json
+        user_id = int(data.get('user_id'))
+        is_admin = int(data.get('is_admin', 1))
+        
+        with get_db_connection() as conn:
+            conn.execute('UPDATE users SET is_admin = ? WHERE id = ?', (is_admin, user_id))
+            conn.commit()
+        
+        return jsonify({'success': True, 'message': 'وضعیت ادمین تغییر کرد'})
+    except Exception as e:
+        logger.error(f"[Admin] Error updating admin status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/admin/users', methods=['GET'])
+@require_admin
+def admin_users_page():
+    """Admin panel - View all users"""
+    try:
+        with get_db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT u.*, 
+                       COALESCE(SUM(CASE WHEN ub.status = 'completed' THEN ub.amount ELSE 0 END), 0) as total_charge,
+                       COUNT(CASE WHEN ub.status = 'completed' THEN 1 END) as transaction_count
+                FROM users u
+                LEFT JOIN user_billing ub ON u.id = ub.user_id
+                GROUP BY u.id
+                ORDER BY u.created_at DESC
+            ''')
+            users = cursor.fetchall()
+        
+        users_html = ''.join([f"""
+            <tr>
+                <td>{idx + 1}</td>
+                <td>{user['mobile']}</td>
+                <td>{user['full_name'] or '-'}</td>
+                <td>{'✓' if user['is_verified'] else '✗'}</td>
+                <td>{user['balance']:,} تومان</td>
+                <td>{user['total_charge']:,} تومان</td>
+                <td>{user['transaction_count']}</td>
+                <td>{user['created_at'][:19] if user['created_at'] else '-'}</td>
+                <td>{user['last_login'][:19] if user['last_login'] else '-'}</td>
+                <td>
+                    <span class="badge bg-{'success' if user['is_active'] else 'danger'}">
+                        {'فعال' if user['is_active'] else 'غیرفعال'}
+                    </span>
+                </td>
+            </tr>
+        """ for idx, user in enumerate(users)])
+        
+        return f"""
+        <!DOCTYPE html>
+        <html lang="fa" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>مدیریت کاربران</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <style>
+                body {{ background: #f5f5f5; }}
+                .admin-header {{ background: white; padding: 1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+                .table-container {{ background: white; border-radius: 10px; padding: 2rem; margin-top: 2rem; }}
+            </style>
+        </head>
+        <body>
+            <div class="admin-header">
+                <div class="container">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0">پنل مدیریتی</h4>
+                        <div>
+                            <a href="/dashboard" class="btn btn-primary btn-sm">بازگشت به داشبورد</a>
+                            <a href="/api/auth/logout" onclick="return confirm('خروج؟')" class="btn btn-outline-danger btn-sm">خروج</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="container">
+                <div class="table-container">
+                    <h3 class="mb-4">لیست کاربران</h3>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>#</th>
+                                    <th>موبایل</th>
+                                    <th>نام</th>
+                                    <th>وضعیت</th>
+                                    <th>موجودی</th>
+                                    <th>کل شارژ</th>
+                                    <th>تعداد تراکنش</th>
+                                    <th>تاریخ ثبت</th>
+                                    <th>آخرین ورود</th>
+                                    <th>وضعیت حساب</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users_html}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+    except Exception as e:
+        logger.error(f"[Admin] Error loading users: {e}")
+        return f"<h3>خطا در بارگذاری کاربران</h3><p>{str(e)}</p>", 500
+
+@app.route('/billing', methods=['GET'])
+@require_auth
+def billing_page():
+    """Billing page"""
+    user = request.user
+    return f"""
+    <!DOCTYPE html>
+    <html lang="fa" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>شارژ حساب</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+            body {{ background: #f5f5f5; }}
+            .billing-card {{ background: white; border-radius: 10px; padding: 2rem; margin-top: 2rem; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="billing-card">
+                        <h3>شارژ حساب</h3>
+                        <p>موجودی فعلی: <strong>{user['balance']:,} تومان</strong></p>
+                        <div class="mb-3">
+                            <label>مبلغ (تومان)</label>
+                            <input type="number" id="amount" class="form-control" min="1000" step="1000" value="10000">
+                        </div>
+                        <button onclick="charge()" class="btn btn-success w-100">پرداخت با Payping</button>
+                        <div id="message" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>
+            function charge() {{
+                const amount = document.getElementById('amount').value;
+                if (amount < 1000) {{
+                    showMessage('حداقل مبلغ ۱۰۰۰ تومان', 'danger');
+                    return;
+                }}
+                fetch('/api/payping/create-payment', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{amount: amount}})
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        window.location.href = data.payment_url;
+                    }} else {{
+                        showMessage(data.error || 'خطا', 'danger');
+                    }}
+                }});
+            }}
+            function showMessage(msg, type) {{
+                const div = document.getElementById('message');
+                div.className = 'alert alert-' + type;
+                div.textContent = msg;
+            }}
+        </script>
+    </body>
+    </html>
+    """
+
 @app.route('/')
-def home():
+def landing_page():
+    """Public landing page"""
+    return """
+    <!DOCTYPE html>
+    <html lang="fa" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>پلتفرم مدیریت بات‌های ترکیبی - Shirzad Bot</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+        <style>
+            :root {
+                --primary: #5D3EBE;
+                --secondary: #7B68EE;
+                --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+            .hero-section {
+                background: var(--gradient);
+                color: white;
+                padding: 80px 0;
+                text-align: center;
+            }
+            .feature-card {
+                border: none;
+                box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+                transition: transform 0.3s;
+                height: 100%;
+            }
+            .feature-card:hover {
+                transform: translateY(-10px);
+                box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            }
+            .feature-icon {
+                font-size: 3rem;
+                color: var(--primary);
+                margin-bottom: 1rem;
+            }
+            .btn-primary {
+                background: var(--gradient);
+                border: none;
+                padding: 12px 40px;
+                font-size: 1.1rem;
+            }
+            .btn-primary:hover { opacity: 0.9; }
+        </style>
+    </head>
+    <body>
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="container">
+                <h1 class="display-4 mb-4">پلتفرم مدیریت بات‌های ترکیبی</h1>
+                <p class="lead mb-5">مدیریت حرفه‌ای تلگرام، بله و ایتا با یک داشبورد قدرتمند</p>
+                <a href="/login" class="btn btn-light btn-lg">
+                    <i class="fas fa-rocket me-2"></i>شروع کنید
+                </a>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="py-5">
+            <div class="container">
+                <h2 class="text-center mb-5">قابلیت‌های اصلی</h2>
+                <div class="row g-4">
+                    <div class="col-md-4">
+                        <div class="card feature-card p-4 text-center">
+                            <i class="fas fa-paper-plane feature-icon"></i>
+                            <h4>ارسال گروهی</h4>
+                            <p>ارسال پیام، تصویر، ویدیو و فایل به هزاران کاربر به صورت همزمان</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card feature-card p-4 text-center">
+                            <i class="fas fa-clock feature-icon"></i>
+                            <h4>زمان‌بندی</h4>
+                            <p>برنامه‌ریزی ارسال‌ها برای زمان‌های مشخص و تکرار خودکار</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card feature-card p-4 text-center">
+                            <i class="fas fa-chart-line feature-icon"></i>
+                            <h4>گزارشات دقیق</h4>
+                            <p>آمار و گزارشات کامل از عملکرد و نرخ بازخورد پیام‌ها</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card feature-card p-4 text-center">
+                            <i class="fas fa-tags feature-icon"></i>
+                            <h4>تگ‌گذاری</h4>
+                            <p>دسته‌بندی و مدیریت چت‌ها با سیستم تگ‌گذاری پیشرفته</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card feature-card p-4 text-center">
+                            <i class="fas fa-users feature-icon"></i>
+                            <h4>مدیریت ادمین</h4>
+                            <p>افزودن و حذف ادمین، پین و ویرایش پیام‌ها</p>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card feature-card p-4 text-center">
+                            <i class="fas fa-sync feature-icon"></i>
+                            <h4>همگام‌سازی</h4>
+                            <p>سینک خودکار داده‌ها بین پلتفرم‌های مختلف</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="py-5" style="background: #f8f9fa;">
+            <div class="container text-center">
+                <h2 class="mb-4">آماده شروع هستید؟</h2>
+                <p class="lead mb-4">همین حالا ثبت نام کنید و تجربه مدیریت حرفه‌ای بات‌ها را داشته باشید</p>
+                <a href="/login" class="btn btn-primary btn-lg">
+                    <i class="fas fa-user-plus me-2"></i>ثبت نام رایگان
+                </a>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="bg-dark text-white text-center py-4">
+            <p class="mb-0">&copy; ۱۴۰۴ Shirzad Bot Platform. تمامی حقوق محفوظ است.</p>
+        </footer>
+    </body>
+    </html>
+    """
+
+@app.route('/dashboard')
+@app.route('/admin')
+@require_admin
+def admin_dashboard():
+    """Admin dashboard - Main bot management page"""
     try:
         return render_template('index.html')
     except Exception as e:

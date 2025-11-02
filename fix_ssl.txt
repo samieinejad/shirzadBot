@@ -1,0 +1,13 @@
+Run:
+
+# Check the shirzadbot config
+sudo cat /etc/nginx/sites-enabled/shirzadbot
+
+# Your config is only listening on port 80!
+# You need to add SSL/HTTPS configuration
+
+Run certbot to add SSL:
+sudo certbot --nginx -d social.msn1.ir
+
+This will automatically update your Nginx config to add SSL!
+

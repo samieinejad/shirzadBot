@@ -1,0 +1,10 @@
+The bot is CRASHING because it's trying to access bot.username too early!
+
+But Flask is running! Check:
+
+curl http://localhost:5010
+
+If that works, the site should work!
+
+The Telegram bot crash is a separate issue - Flask still works.
+

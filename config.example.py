@@ -25,3 +25,11 @@ DB_FILE = "multi_bot_platform.db"
 
 # Template folder
 TEMPLATE_FOLDER = "."
+
+# Kavenegar SMS API Key (for OTP verification)
+# Get from: https://panel.kavenegar.com/client/membership/register
+KAVENEGAR_API_KEY = "YOUR_KAVENEGAR_API_KEY_HERE"
+
+# Payping API Token (for payment gateway)
+# Get from: https://payping.io/dashboard/api
+PAYPING_TOKEN = "YOUR_PAYPING_TOKEN_HERE"

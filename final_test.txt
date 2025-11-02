@@ -1,0 +1,13 @@
+Run:
+
+# Reload Nginx
+sudo systemctl reload nginx
+
+# Test HTTPS
+curl https://social.msn1.ir | head -20
+
+# Then open in browser:
+# https://social.msn1.ir
+
+YOU'RE DONE! 🎉
+

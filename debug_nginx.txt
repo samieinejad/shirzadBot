@@ -1,0 +1,20 @@
+Run these commands:
+
+# 1. Check recent Nginx access logs to see what's happening
+sudo tail -30 /var/log/nginx/shirzadbot_access.log
+
+# 2. Check if there are NEW errors (not old ones)
+sudo tail -30 /var/log/nginx/error.log | grep "$(date +%H:%M)"
+
+# 3. Check the Nginx config
+sudo cat /etc/nginx/sites-available/shirzadbot
+
+# 4. Check what Nginx process is running
+ps aux | grep nginx
+
+# 5. Reload Nginx to clear any cached config
+sudo systemctl reload nginx
+
+# 6. Try again
+curl http://social.msn1.ir | head -20
+

@@ -1,0 +1,35 @@
+=================================================================
+PULL THE FIX NOW ON YOUR UBUNTU SERVER
+=================================================================
+
+Run these commands:
+
+cd /var/www/shirzadBot
+
+# Stop the service
+sudo systemctl stop shirzadbot
+
+# Pull the latest code (with fix)
+git pull
+
+# Verify the fix is there
+grep "stop_signals=None" app.py
+
+# Start the service
+sudo systemctl start shirzadbot
+
+# Check status
+sudo systemctl status shirzadbot
+
+# Wait a few seconds, then test
+sleep 5
+curl http://localhost:5010
+
+# Check logs
+tail -f logs/app.log
+
+=================================================================
+The fix disables signal handlers (stop_signals=None) so bots
+can run in threads without crashing.
+=================================================================
+

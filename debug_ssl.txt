@@ -1,0 +1,17 @@
+Run these:
+
+# 1. Check if HTTPS is listening on port 443
+sudo netstat -tlnp | grep 443
+
+# 2. List all enabled Nginx sites
+ls -la /etc/nginx/sites-enabled/
+
+# 3. Check for SSL configuration
+sudo grep -r "listen 443" /etc/nginx/sites-enabled/
+
+# 4. Check certbot status
+sudo certbot certificates
+
+# 5. Look for any SSL config
+sudo cat /etc/nginx/sites-enabled/* | grep -A 5 "443"
+
