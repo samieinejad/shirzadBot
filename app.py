@@ -15916,13 +15916,13 @@ def run_telegram_bot():
 
         logger.info("[Telegram] Polling for updates starting...")
         # اضافه کردن تنظیمات برای حل مشکل Conflict
-        app.run_polling(drop_pending_updates=True, allowed_updates=['message', 'callback_query', 'my_chat_member'])
+        app.run_polling(drop_pending_updates=True, allowed_updates=['message', 'callback_query', 'my_chat_member'], stop_signals=None)
     except Exception as e:
         if "Conflict" in str(e):
             logger.warning("[Telegram] Conflict detected - another bot instance may be running. Retrying in 5 seconds...")
             time.sleep(5)
             try:
-                app.run_polling(drop_pending_updates=True, allowed_updates=['message', 'callback_query', 'my_chat_member'])
+                app.run_polling(drop_pending_updates=True, allowed_updates=['message', 'callback_query', 'my_chat_member'], stop_signals=None)
             except Exception as retry_error:
                 logger.critical(f"[Telegram] Critical error during retry: {retry_error}", exc_info=True)
         else:
@@ -15986,7 +15986,7 @@ def run_bale_bot():
         app.add_handler(MessageHandler(filters.ALL, lambda u, c: message_handler_base(u, c, 'bale', BALE_OWNER_ID)))
 
         logger.info("[Bale] Polling for updates starting...")
-        app.run_polling()
+        app.run_polling(stop_signals=None)
     except Exception as e:
         logger.critical(f"[Bale] Critical error during bot execution: {e}", exc_info=True)
     finally:
