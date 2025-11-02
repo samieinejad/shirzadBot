@@ -6082,8 +6082,101 @@ def allowed_file(filename):
 # User Authentication System
 # =================================================================
 
-import secrets
-import re
+# Import from refactored auth service
+try:
+    from app.services.auth_service import AuthService, require_auth, require_admin
+except ImportError:
+    logger.error("Failed to import auth service, falling back to inline functions")
+    import secrets
+    import re
+    
+    # Fallback: define inline if import fails
+    class AuthService:
+        @staticmethod
+        def normalize_mobile(mobile):
+            mobile = re.sub(r'[^\d]', '', mobile)
+            if mobile.startswith('0'):
+                mobile = '98' + mobile[1:]
+            elif not mobile.startswith('98'):
+                mobile = '98' + mobile
+            return mobile
+        
+        @staticmethod
+        def generate_otp():
+            return ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        
+        @staticmethod
+        def send_otp_via_kavenegar(mobile, code):
+            # Fallback implementation
+            logger.info(f"[MOCK] OTP code for {mobile}: {code}")
+            return True
+        
+        @staticmethod
+        def create_session(user_id):
+            session_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now() + timedelta(days=30)
+            with get_db_connection() as conn:
+                conn.execute('''
+                    INSERT INTO user_sessions (user_id, session_token, expires_at)
+                    VALUES (?, ?, ?)
+                ''', (user_id, session_token, expires_at))
+                conn.commit()
+            return session_token
+        
+        @staticmethod
+        def get_user_from_session(session_token):
+            if not session_token:
+                return None
+            with get_db_connection() as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT u.*, ut.telegram_token, ut.bale_token, ut.ita_token,
+                           ut.telegram_owner_id, ut.bale_owner_id, ut.ita_owner_id
+                    FROM user_sessions s
+                    JOIN users u ON s.user_id = u.id
+                    LEFT JOIN user_tokens ut ON u.id = ut.user_id
+                    WHERE s.session_token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+                ''', (session_token,))
+                result = cursor.fetchone()
+                return dict(result) if result else None
+    
+    # Fallback decorators
+    def require_auth(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            session_token = request.cookies.get('session_token') or request.headers.get('X-Session-Token')
+            user = AuthService.get_user_from_session(session_token)
+            if not user:
+                if request.path.startswith('/api/'):
+                    return jsonify({'error': 'Unauthorized', 'login_required': True}), 401
+                else:
+                    from flask import redirect, url_for
+                    return redirect('/login')
+            request.user = user
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    def require_admin(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            session_token = request.cookies.get('session_token') or request.headers.get('X-Session-Token')
+            user = AuthService.get_user_from_session(session_token)
+            if not user:
+                if request.path.startswith('/api/'):
+                    return jsonify({'error': 'Unauthorized', 'login_required': True}), 401
+                else:
+                    return redirect('/login')
+            if not user.get('is_admin'):
+                if request.path.startswith('/api/'):
+                    return jsonify({'error': 'Admin access required'}), 403
+                else:
+                    return redirect('/dashboard')
+            request.user = user
+            return f(*args, **kwargs)
+        return decorated_function
 
 # Kavenegar API configuration (add to config.py)
 try:
@@ -6094,123 +6187,12 @@ except:
     KAVENEGAR_API_KEY = os.environ.get('KAVENEGAR_API_KEY', '')
     PAYPING_TOKEN = os.environ.get('PAYPING_TOKEN', '')
 
-def normalize_mobile(mobile):
-    """Normalize Iranian mobile number"""
-    mobile = re.sub(r'[^\d]', '', mobile)
-    if mobile.startswith('0'):
-        mobile = '98' + mobile[1:]
-    elif not mobile.startswith('98'):
-        mobile = '98' + mobile
-    return mobile
-
-def send_otp_via_kavenegar(mobile, code):
-    """Send OTP code via Kavenegar SMS"""
-    try:
-        import requests
-        normalized = normalize_mobile(mobile)
-        
-        if not KAVENEGAR_API_KEY:
-            logger.warning("KAVENEGAR_API_KEY not configured, using mock mode")
-            logger.info(f"[MOCK] OTP code for {mobile}: {code}")
-            return True
-        
-        url = "https://api.kavenegar.com/v1/{}/sms/send.json".format(KAVENEGAR_API_KEY)
-        payload = {
-            'receptor': normalized,
-            'message': f'کد تایید شما: {code}\nاین کد 5 دقیقه معتبر است.',
-            'sender': '1000596446'  # Change to your Kavenegar sender number
-        }
-        
-        response = requests.post(url, data=payload, timeout=10)
-        if response.status_code == 200:
-            result = response.json()
-            if result.get('return', {}).get('status') == 200:
-                logger.info(f"[Kavenegar] OTP sent to {mobile}")
-                return True
-            else:
-                logger.error(f"[Kavenegar] Failed: {result}")
-                return False
-        else:
-            logger.error(f"[Kavenegar] HTTP {response.status_code}")
-            return False
-    except Exception as e:
-        logger.error(f"[Kavenegar] Error sending OTP: {e}")
-        return False
-
-def generate_otp():
-    """Generate 6-digit OTP code"""
-    return ''.join([str(random.randint(0, 9)) for _ in range(6)])
-
-def create_session(user_id):
-    """Create user session"""
-    session_token = secrets.token_urlsafe(32)
-    expires_at = datetime.now() + timedelta(days=30)
-    
-    with get_db_connection() as conn:
-        conn.execute('''
-            INSERT INTO user_sessions (user_id, session_token, expires_at)
-            VALUES (?, ?, ?)
-        ''', (user_id, session_token, expires_at))
-        conn.commit()
-    
-    return session_token
-
-def get_user_from_session(session_token):
-    """Get user from session token"""
-    if not session_token:
-        return None
-    
-    with get_db_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT u.*, ut.telegram_token, ut.bale_token, ut.ita_token,
-                   ut.telegram_owner_id, ut.bale_owner_id, ut.ita_owner_id
-            FROM user_sessions s
-            JOIN users u ON s.user_id = u.id
-            LEFT JOIN user_tokens ut ON u.id = ut.user_id
-            WHERE s.session_token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
-        ''', (session_token,))
-        result = cursor.fetchone()
-        return dict(result) if result else None
-
-def require_auth(f):
-    """Decorator to require authentication"""
-    from functools import wraps
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        session_token = request.cookies.get('session_token') or request.headers.get('X-Session-Token')
-        user = get_user_from_session(session_token)
-        if not user:
-            if request.path.startswith('/api/'):
-                return jsonify({'error': 'Unauthorized', 'login_required': True}), 401
-            else:
-                from flask import redirect, url_for
-                return redirect('/login')
-        request.user = user
-        return f(*args, **kwargs)
-    return decorated_function
-
-def require_admin(f):
-    """Decorator to require admin access"""
-    from functools import wraps
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        session_token = request.cookies.get('session_token') or request.headers.get('X-Session-Token')
-        user = get_user_from_session(session_token)
-        if not user:
-            if request.path.startswith('/api/'):
-                return jsonify({'error': 'Unauthorized', 'login_required': True}), 401
-            else:
-                return redirect('/login')
-        if not user.get('is_admin'):
-            if request.path.startswith('/api/'):
-                return jsonify({'error': 'Admin access required'}), 403
-            else:
-                return redirect('/dashboard')
-        request.user = user
-        return f(*args, **kwargs)
-    return decorated_function
+# Alias for backward compatibility
+normalize_mobile = AuthService.normalize_mobile
+send_otp_via_kavenegar = AuthService.send_otp_via_kavenegar
+generate_otp = AuthService.generate_otp
+create_session = AuthService.create_session
+get_user_from_session = AuthService.get_user_from_session
 
 # Authentication Routes
 @app.route('/login')
