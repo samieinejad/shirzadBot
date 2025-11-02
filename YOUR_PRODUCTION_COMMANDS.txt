@@ -1,0 +1,82 @@
+=================================================================
+  PRODUCTION SETUP COMMANDS - social.msn1.ir
+=================================================================
+
+You are currently in: /var/www/shirzadBot
+
+-----------------------------------------------------------------
+STEP 1: Run Quick Setup
+-----------------------------------------------------------------
+
+chmod +x QUICK_PRODUCTION_SETUP.sh
+bash QUICK_PRODUCTION_SETUP.sh
+
+(When asked, edit config.py with your tokens)
+
+-----------------------------------------------------------------
+STEP 2: Verify It's Working
+-----------------------------------------------------------------
+
+# Check service status
+sudo systemctl status shirzadbot
+
+# View logs
+tail -f logs/app.log
+
+# Test locally
+curl http://localhost:5000
+
+-----------------------------------------------------------------
+STEP 3: Access Your Bot
+-----------------------------------------------------------------
+
+Open browser: https://social.msn1.ir
+
+-----------------------------------------------------------------
+MANUAL COMMANDS (if script fails)
+-----------------------------------------------------------------
+
+# Install packages
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv nginx supervisor certbot python3-certbot-nginx
+
+# Setup venv
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Create config.py
+cp config.example.py config.py
+nano config.py  # Add your tokens
+
+# Create service
+sudo bash deploy/install.sh
+
+# Or use comprehensive setup
+bash PRODUCTION_SETUP.sh
+
+-----------------------------------------------------------------
+USEFUL COMMANDS AFTER SETUP
+-----------------------------------------------------------------
+
+# Restart service
+sudo systemctl restart shirzadbot
+
+# View logs
+tail -f logs/app.log
+
+# Update code
+bash deploy/update.sh
+
+# Backup
+bash deploy/backup.sh
+
+# Check status
+sudo systemctl status shirzadbot
+netstat -tlnp | grep 5000
+
+-----------------------------------------------------------------
+
+ALL COMMANDS READY TO COPY-PASTE!
+
+=================================================================
+
