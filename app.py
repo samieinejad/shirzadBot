@@ -12546,7 +12546,7 @@ async def tele_post_init(application: TelegramApplication):
     global telegram_app, telegram_bot_loop
     telegram_app = application
     telegram_bot_loop = asyncio.get_running_loop()
-    logger.info(f"[Telegram] Bot @{application.bot.username} initialized and ready.")
+    logger.info(f"[Telegram] Bot initialized and ready.")
     # فعال‌سازی برنامه‌ریز ثبت روزانه اعضا
     asyncio.create_task(metrics_post_init(application, 'telegram'))
 
@@ -12554,7 +12554,7 @@ async def bale_post_init(application: TelegramApplication):
     global bale_app, bale_bot_loop
     bale_app = application
     bale_bot_loop = asyncio.get_running_loop()
-    logger.info(f"[Bale] Bot @{application.bot.username} initialized and ready.")
+    logger.info(f"[Bale] Bot initialized and ready.")
     # فعال‌سازی برنامه‌ریز ثبت روزانه اعضا
     asyncio.create_task(metrics_post_init(application, 'bale'))
 
