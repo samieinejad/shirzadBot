@@ -6275,7 +6275,8 @@ def auth_page():
                     .then(r => r.json())
                     .then(data => {
                         if (data.success) {
-                            window.location.href = '/';
+                            // Redirect to customer dashboard
+                            window.location.href = '/customer';
                         } else {
                             showMessage(data.error || 'کد نامعتبر', 'danger');
                         }
@@ -6972,6 +6973,128 @@ def landing_page():
         <footer class="bg-dark text-white text-center py-4">
             <p class="mb-0">&copy; ۱۴۰۴ Shirzad Bot Platform. تمامی حقوق محفوظ است.</p>
         </footer>
+    </body>
+    </html>
+    """
+
+@app.route('/customer')
+@require_auth
+def customer_dashboard():
+    """Customer dashboard - User-facing features"""
+    user = request.user
+    
+    # Check if user is admin - redirect to admin dashboard
+    if user.get('is_admin'):
+        return redirect('/dashboard')
+    
+    return f"""
+    <!DOCTYPE html>
+    <html lang="fa" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>داشبورد کاربری - Shirzad Bot</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+        <style>
+            body {{ background: #f5f7fa; }}
+            .navbar {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }}
+            .card {{ border: none; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }}
+            .stat-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }}
+        </style>
+    </head>
+    <body>
+        <!-- Navbar -->
+        <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+            <div class="container">
+                <a class="navbar-brand" href="#"><i class="fas fa-robot"></i> Shirzad Bot</a>
+                <div class="navbar-nav ms-auto">
+                    <a class="nav-link" href="/profile"><i class="fas fa-user"></i> پروفایل</a>
+                    <a class="nav-link" href="/billing"><i class="fas fa-wallet"></i> حساب</a>
+                    <button class="btn btn-light btn-sm" onclick="logout()"><i class="fas fa-sign-out-alt"></i> خروج</button>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Dashboard Content -->
+        <div class="container">
+            <div class="row mb-4">
+                <div class="col-md-12">
+                    <h2>خوش آمدید!</h2>
+                    <p class="text-muted">شماره موبایل: {user['mobile']}</p>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <div class="card stat-card">
+                        <div class="card-body">
+                            <h5><i class="fas fa-wallet"></i> موجودی</h5>
+                            <h2>{user['balance']:,} تومان</h2>
+                            <a href="/billing" class="btn btn-light btn-sm mt-2">
+                                <i class="fas fa-plus"></i> شارژ حساب
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4 mb-4">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5><i class="fas fa-bot"></i> وضعیت بات‌ها</h5>
+                            <p>{"✅ بات‌ها متصل هستند" if user.get('telegram_token') or user.get('bale_token') or user.get('ita_token') else "⚠️ هیچ بات‌ای تنظیم نشده"}</p>
+                            <a href="/profile" class="btn btn-primary btn-sm">
+                                <i class="fas fa-cog"></i> تنظیمات
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4 mb-4">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5><i class="fas fa-info-circle"></i> پشتیبانی</h5>
+                            <p>نیاز به کمک دارید؟</p>
+                            <a href="mailto:support@example.com" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-envelope"></i> تماس با ما
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-rocket"></i> ویژگی‌های موجود</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <i class="fas fa-check-circle text-success"></i> مدیریت چندگانه پلتفرم‌ها
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <i class="fas fa-check-circle text-success"></i> ارسال پیام گروهی
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <i class="fas fa-check-circle text-success"></i> برنامه‌ریزی زماندار
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <i class="fas fa-check-circle text-success"></i> گزارشات کامل
+                        </div>
+                    </div>
+                    <div class="alert alert-warning mt-3">
+                        <i class="fas fa-lock"></i> برای دسترسی کامل به پنل مدیریت، لطفاً با ادمین تماس بگیرید.
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            function logout() {{
+                fetch('/api/auth/logout', {{method: 'POST'}})
+                    .then(() => window.location.href = '/login');
+            }}
+        </script>
     </body>
     </html>
     """
