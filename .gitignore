@@ -1,0 +1,112 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Bot specific
+*.db
+*.db-shm
+*.db-wal
+bot_database.db*
+multi_bot_platform.db*
+app.log
+*.log
+
+# Uploads and temp files
+uploads/
+temp/
+*.tmp
+
+# Environment variables
+.env
+.env.local
+config.py
+
+# Backup files
+*.bak
+*.backup
+backup_*.json
+chats_backup.json
+
+# Secret keys and tokens
+secrets/
+*.key
+*.pem
+
+# Test files
+test_*.py
+tests/
+__tests__/
+
+# Node modules (if any)
+node_modules/
+
+# Compiled files
+*.pyc
+*.pyo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# Distribution / packaging
+dist/
+build/
+*.tar.gz
+
+# Windows specific
+*.bat
+*.cmd
+Desktop.ini
+Thumbs.db
+
+# Keep deploy scripts
+!deploy/*.sh
+!deploy/README.md
+

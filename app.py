@@ -132,15 +132,22 @@ logging.getLogger(__name__).setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- تنظیمات اولیه: حتما مقادیر را تغییر دهید ---
-TELEGRAM_BOT_TOKEN = "7963827943:AAHsvRqbwqTjTtiZK_Iv7Rer5Lra0VmwW0s"  # توکن ربات تلگرام خود را وارد کنید
-BALE_BOT_TOKEN = "1982745502:dgLeJruWoNcoUOe21hAvQ1mjqiBfZCfV1SytWAQY"          # توکن ربات بله خود را وارد کنید
-ITA_BOT_TOKEN = "bot195541:69b9f7fd-c523-4a2f-a22a-5501cf076a07"        # توکن ربات ایتا خود را وارد کنید
-
-OWNER_ID = 6483380759                            # آیدی عددی ادمین تلگرام
-BALE_OWNER_ID = 205469326                       # آیدی عددی ادمین بله
-ITA_OWNER_ID = "6483380759"  # آیدی کاربری ادمین ایتا (می‌توانید تغییر دهید)
-DB_FILE = "multi_bot_platform.db"
-TEMPLATE_FOLDER = os.path.abspath('.')
+# Try to load from config.py first, fallback to defaults
+try:
+    import config
+    TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
+    BALE_BOT_TOKEN = config.BALE_BOT_TOKEN
+    ITA_BOT_TOKEN = config.ITA_BOT_TOKEN
+    OWNER_ID = config.OWNER_ID
+    BALE_OWNER_ID = config.BALE_OWNER_ID
+    ITA_OWNER_ID = config.ITA_OWNER_ID
+    DB_FILE = config.DB_FILE
+    TEMPLATE_FOLDER = config.TEMPLATE_FOLDER
+    logger.info("✅ Configuration loaded from config.py")
+except (ImportError, AttributeError):
+    # Fallback to defaults (for local development)
+    logger.error("❌ config.py not found! Please create config.py from config.example.py")
+    raise ImportError("config.py is required. Copy config.example.py to config.py and add your tokens.")
 
 # --- Broadcast de-duplication ---
 BROADCAST_DEDUPE_TTL_SECONDS = 60
@@ -12472,8 +12479,8 @@ def api_clear_cache():
         if platform in ['all', 'telegram']:
             try:
                 import requests
-                # این باید با token واقعی جایگزین شود
-                telegram_token = "6483380759:AAHjqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq"  # از فایل app.py استخراج کنید
+                # Use actual token from config
+                telegram_token = TELEGRAM_BOT_TOKEN
                 webhook_url = f"https://api.telegram.org/bot{telegram_token}/deleteWebhook"
                 response = requests.post(webhook_url, timeout=10)
                 if response.status_code == 200:
