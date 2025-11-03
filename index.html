@@ -889,6 +889,9 @@
             <header class="page-header">
                 <h2 id="page-title">داشبورد</h2>
                 <div>
+                    <button class="btn btn-outline-danger ms-2" onclick="handleLogout()" title="خروج">
+                        <i class="fas fa-sign-out-alt"></i> خروج
+                    </button>
                     <button class="btn btn-light border sidebar-toggle-btn d-lg-none me-2" onclick="toggleSidebar()">
                         <i class="fas fa-bars"></i>
                     </button>
@@ -2832,6 +2835,27 @@
                 toggleIcon.classList.add('fa-moon');
                 localStorage.setItem('darkMode', 'false');
             }
+        }
+        
+        function handleLogout() {
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = '/login';
+                } else {
+                    alert('خطا در خروج: ' + (data.error || 'لطفا دوباره تلاش کنید'));
+                }
+            })
+            .catch(error => {
+                console.error('Error during logout:', error);
+                alert('خطا در خروج: لطفا دوباره تلاش کنید');
+            });
         }
         
         function loadDarkModePreference() {
