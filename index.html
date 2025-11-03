@@ -2737,80 +2737,73 @@
             const navLinks = document.querySelectorAll('.sidebar .nav-link');
             const contentSections = document.querySelectorAll('.content-section');
             const pageTitle = document.getElementById('page-title');
-
-            // Set initial state
-            const activeSectionId = 'dashboard-section';
-            document.getElementById(activeSectionId).classList.add('active');
+            
+            // Handle hash changes for section navigation
+            function showSection(sectionId) {
+                // Update nav link active state
+                navLinks.forEach(l => l.classList.remove('active'));
+                const link = document.querySelector(`[data-section="${sectionId}"]`);
+                if (link) link.classList.add('active');
+                
+                // Show/Hide content sections
+                contentSections.forEach(section => {
+                    section.style.display = 'none';
+                    section.classList.remove('active');
+                });
+                
+                const activeSection = document.getElementById(sectionId);
+                if(activeSection) {
+                    activeSection.style.display = 'block';
+                    setTimeout(() => activeSection.classList.add('active'), 10);
+                }
+                
+                // Update page title
+                if (link && pageTitle) {
+                    pageTitle.textContent = link.textContent.trim();
+                }
+                
+                // Close sidebar on mobile after click
+                if (window.innerWidth < 992) {
+                    document.body.classList.remove('sidebar-toggled');
+                }
+            }
             
             navLinks.forEach(link => {
                 link.addEventListener('click', (e) => {
                     const sectionId = link.getAttribute('data-section');
                     
-                    // If has href with hash, let it navigate naturally
-                    if (link.href && link.href.includes('#') && !link.href.includes('/admin/users')) {
-                        // Let browser handle the hash navigation
+                    // For /admin/users, let browser navigate normally
+                    if (link.href && link.href.includes('/admin/users')) {
                         return;
                     }
                     
-                    // For links without hash, handle manually
+                    // For hash links, prevent default and show section
                     e.preventDefault();
                     
-                    // Update nav link active state
-                    navLinks.forEach(l => l.classList.remove('active'));
-                    link.classList.add('active');
-                    
-                    // Show/Hide content sections
-                    contentSections.forEach(section => {
-                        section.style.display = 'none';
-                        section.classList.remove('active');
-                    });
-                    
-                    const activeSection = document.getElementById(sectionId);
-                    if(activeSection) {
-                        activeSection.style.display = 'block';
-                        // A tiny delay to allow display:block to take effect before animation
-                        setTimeout(() => activeSection.classList.add('active'), 10);
+                    // Update URL hash
+                    if (sectionId) {
+                        window.location.hash = sectionId;
                     }
                     
-                    // Update page title
-                    pageTitle.textContent = link.textContent.trim();
-                    
-                    // Close sidebar on mobile after click
-                     if (window.innerWidth < 992) {
-                        document.body.classList.remove('sidebar-toggled');
-                    }
+                    showSection(sectionId);
                 });
             });
             
-            // Handle hash changes for section navigation
+            // Handle hash changes
             window.addEventListener('hashchange', () => {
                 const hash = window.location.hash.substring(1);
                 if (hash) {
-                    const link = document.querySelector(`[data-section="${hash}"]`);
-                    if (link) {
-                        // Update nav link active state
-                        navLinks.forEach(l => l.classList.remove('active'));
-                        link.classList.add('active');
-                        
-                        // Show/Hide content sections
-                        contentSections.forEach(section => {
-                            section.style.display = 'none';
-                            section.classList.remove('active');
-                        });
-                        
-                        const activeSection = document.getElementById(hash);
-                        if(activeSection) {
-                            activeSection.style.display = 'block';
-                            setTimeout(() => activeSection.classList.add('active'), 10);
-                        }
-                        
-                        // Update page title
-                        if (pageTitle) {
-                            pageTitle.textContent = link.textContent.trim();
-                        }
-                    }
+                    showSection(hash);
                 }
             });
+            
+            // Show initial section based on hash
+            if (window.location.hash) {
+                showSection(window.location.hash.substring(1));
+            } else {
+                // Default to dashboard-section if no hash
+                showSection('dashboard-section');
+            }
 
             // Initial data load
             fetchStats();
