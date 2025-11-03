@@ -9,13 +9,20 @@
 pip install python-telegram-bot Flask pandas openpyxl
 """
 
+# Fix UTF-8 encoding for Windows console
+import sys
+import io
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 # حل مشکلات سازگاری قبل از import کردن سایر ماژول‌ها
 try:
     from compatibility_fix import fix_compatibility_issues, check_system_compatibility
     if check_system_compatibility():
         fix_compatibility_issues()
 except ImportError:
-    print("⚠️  فایل compatibility_fix.py یافت نشد - ادامه بدون حل مشکلات سازگاری")
+    pass  # compatibility_fix.py not found - continue without fixes
 
 # --- Flask App Initialization ---
 from flask import Flask, jsonify, request, render_template, send_from_directory, redirect
@@ -62,14 +69,7 @@ except ImportError:
             
             return None
 
-# Initialize Flask app
-app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-app.config['SECRET_KEY'] = os.urandom(24)  # For session management
-
-# Ensure upload folder exists
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Note: Flask app will be initialized after config loads (see below)
 import os
 import random
 import sqlite3
@@ -148,6 +148,15 @@ except (ImportError, AttributeError):
     # Fallback to defaults (for local development)
     logger.error("❌ config.py not found! Please create config.py from config.example.py")
     raise ImportError("config.py is required. Copy config.example.py to config.py and add your tokens.")
+
+# Initialize Flask app (after config loads)
+app = Flask(__name__, template_folder=TEMPLATE_FOLDER)
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SECRET_KEY'] = os.urandom(24)  # For session management
+
+# Ensure upload folder exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- Broadcast de-duplication ---
 BROADCAST_DEDUPE_TTL_SECONDS = 60
@@ -6066,13 +6075,6 @@ async def delete_messages_async(app: TelegramApplication, batch_id: int, platfor
     # Batch is already marked as deleted in the database
     logger.info(f"[{platform}] Batch {batch_id} marked as deleted. Deleted: {deleted}, Failed: {failed}")
     return {"deleted": deleted, "failed": failed}
-
-# =================================================================
-# --- Flask web server ---
-# =================================================================
-app = Flask(__name__, template_folder=TEMPLATE_FOLDER)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024 # حداکثر سایز آپلود 50 مگابایت
 
 def allowed_file(filename):
     return '.' in filename and \
