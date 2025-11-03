@@ -12,6 +12,17 @@ logger = logging.getLogger(__name__)
 # This will be set from app config
 DB_FILE = None
 
+def _get_db_file():
+    """Get DB file path - lazy loading from config"""
+    global DB_FILE
+    if DB_FILE is None:
+        try:
+            import config
+            DB_FILE = getattr(config, 'DB_FILE', 'multi_bot_platform.db')
+        except:
+            DB_FILE = 'multi_bot_platform.db'
+    return DB_FILE
+
 def set_db_file(db_path):
     """Set the database file path"""
     global DB_FILE
@@ -19,8 +30,9 @@ def set_db_file(db_path):
 
 def get_db_connection():
     """Get database connection with optimized settings"""
-    logger.debug(f"[DB] Connecting to database: {DB_FILE}")
-    conn = sqlite3.connect(DB_FILE, timeout=10, check_same_thread=False)
+    db_file = _get_db_file()
+    logger.debug(f"[DB] Connecting to database: {db_file}")
+    conn = sqlite3.connect(db_file, timeout=10, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     
     # Optimize for concurrent access

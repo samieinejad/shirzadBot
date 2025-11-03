@@ -24,19 +24,26 @@ except:
     KAVENEGAR_API_KEY = ''
     PAYPING_TOKEN = ''
 
-# Import database - this will be injected by app.py
-# Define a placeholder that will be replaced
+# Import database - try multiple import paths
 try:
-    from app.utils.database import get_db_connection as _imported_get_db
+    from app.utils.database import get_db_connection
 except ImportError:
-    # Define a minimal implementation
-    def _imported_get_db():
-        import sqlite3
-        import config
-        return sqlite3.connect(getattr(config, 'DB_FILE', 'multi_bot_platform.db'))
-
-# Use the imported function
-get_db_connection = _imported_get_db
+    try:
+        from utils.database import get_db_connection
+    except ImportError:
+        # Final fallback - use config directly
+        def get_db_connection():
+            import sqlite3
+            try:
+                import config
+                db_file = getattr(config, 'DB_FILE', 'multi_bot_platform.db')
+            except:
+                db_file = 'multi_bot_platform.db'
+            
+            logger.debug(f"[DB] Connecting to database: {db_file}")
+            conn = sqlite3.connect(db_file, timeout=10, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            return conn
 
 
 class AuthService:
