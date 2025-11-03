@@ -2744,6 +2744,15 @@
             
             navLinks.forEach(link => {
                 link.addEventListener('click', (e) => {
+                    const sectionId = link.getAttribute('data-section');
+                    
+                    // If has href with hash, let it navigate naturally
+                    if (link.href && link.href.includes('#') && !link.href.includes('/admin/users')) {
+                        // Let browser handle the hash navigation
+                        return;
+                    }
+                    
+                    // For links without hash, handle manually
                     e.preventDefault();
                     
                     // Update nav link active state
@@ -2751,7 +2760,6 @@
                     link.classList.add('active');
                     
                     // Show/Hide content sections
-                    const sectionId = link.getAttribute('data-section');
                     contentSections.forEach(section => {
                         section.style.display = 'none';
                         section.classList.remove('active');
@@ -2772,6 +2780,36 @@
                         document.body.classList.remove('sidebar-toggled');
                     }
                 });
+            });
+            
+            // Handle hash changes for section navigation
+            window.addEventListener('hashchange', () => {
+                const hash = window.location.hash.substring(1);
+                if (hash) {
+                    const link = document.querySelector(`[data-section="${hash}"]`);
+                    if (link) {
+                        // Update nav link active state
+                        navLinks.forEach(l => l.classList.remove('active'));
+                        link.classList.add('active');
+                        
+                        // Show/Hide content sections
+                        contentSections.forEach(section => {
+                            section.style.display = 'none';
+                            section.classList.remove('active');
+                        });
+                        
+                        const activeSection = document.getElementById(hash);
+                        if(activeSection) {
+                            activeSection.style.display = 'block';
+                            setTimeout(() => activeSection.classList.add('active'), 10);
+                        }
+                        
+                        // Update page title
+                        if (pageTitle) {
+                            pageTitle.textContent = link.textContent.trim();
+                        }
+                    }
+                }
             });
 
             // Initial data load
