@@ -1,0 +1,62 @@
+===============================================
+IMMEDIATE FIX FOR OTP ISSUE
+===============================================
+
+Problem: "کد تایید نامعتبر یا منقضی شده"
+
+Root Cause: Production database doesn't have the admin user
+
+SOLUTION - Do this NOW on production server:
+
+1. SSH to production
+   ssh msn@your-server
+
+2. Navigate to project
+   cd /var/www/shirzadBot
+
+3. Pull latest code
+   git pull origin main
+
+4. Stop service
+   sudo systemctl stop shirzadbot
+
+5. Create admin user
+   source venv/bin/activate
+   python3 create_superadmin.py
+
+6. Start service
+   sudo systemctl start shirzadbot
+
+7. Test login
+   Go to https://social.msn1.ir/login
+   Mobile: 09124335080
+   OTP: 11111
+
+Expected result: SUCCESS login
+
+===============================================
+
+If this doesn't work, check:
+
+1. Service status
+   sudo systemctl status shirzadbot
+
+2. Logs
+   tail -50 logs/app.log
+
+3. Database
+   python3 check_db.py
+
+4. User exists?
+   python3 admin_setup.py list
+
+===============================================
+
+QUICK COPY-PASTE VERSION:
+
+cd /var/www/shirzadBot && git pull origin main && sudo systemctl stop shirzadbot && source venv/bin/activate && python3 create_superadmin.py && sudo systemctl start shirzadbot
+
+Then test at: https://social.msn1.ir/login
+
+===============================================
+
